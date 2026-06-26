@@ -1,13 +1,28 @@
+from django.contrib.auth import login
+from django.db import transaction
+
 from .models import User
 
 
-def register_customer(form):
+class AuthenticationService:
 
-    user = form.save(commit=False)
+    @staticmethod
+    @transaction.atomic
+    def register_user(form):
+        """
+        Creates a new customer account.
+        """
 
-    user.role = User.Role.CUSTOMER
+        user = form.save(commit=False)
 
-    user.save()
+        user.role = User.Role.CUSTOMER
 
-    return user
+        user.is_active = False
 
+        user.save()
+
+        return user
+
+    @staticmethod
+    def login_user(request, user):
+        login(request, user)

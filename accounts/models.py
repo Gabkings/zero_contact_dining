@@ -41,6 +41,8 @@ class User(AbstractUser):
 
     email_verified = models.BooleanField(default=False)
 
+    is_email_verified = models.BooleanField(default=False)
+
     created_at = models.DateTimeField(
         auto_now_add=True,
     )
@@ -49,6 +51,7 @@ class User(AbstractUser):
         auto_now=True,
     )
 
+  
     USERNAME_FIELD = "email"
 
     REQUIRED_FIELDS = ["username"]
@@ -57,3 +60,20 @@ class User(AbstractUser):
 
     def __str__(self):
         return self.email
+    
+
+    @property
+    def full_name(self):
+        return f"{self.first_name} {self.last_name}".strip()
+
+    @property
+    def initials(self):
+        return f"{self.first_name[:1]}{self.last_name[:1]}".upper()
+
+    @property
+    def is_customer(self):
+        return self.role == self.Role.CUSTOMER
+
+    @property
+    def is_restaurant_admin(self):
+        return self.role == self.Role.ADMIN

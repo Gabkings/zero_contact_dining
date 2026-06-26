@@ -1,0 +1,56 @@
+<div class="navbar bg-primary text-primary-content shadow-lg">
+
+    <div class="flex-1">
+
+        <a class="text-xl font-bold">
+
+            Zero Contact Dining
+
+        </a>
+
+    </div>
+
+    <div class="flex-none">
+
+        {% if request.user.is_authenticated %}
+
+            <div class="dropdown dropdown-end">
+
+                <label tabindex="0"
+                       class="btn btn-ghost">
+
+                    {{ request.user.first_name }}
+
+                </label>
+
+                <ul class="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-52">
+
+                    <li>
+
+                        <a href="{% url 'profile' %}">
+
+                            Profile
+
+                        </a>
+
+                    </li>
+
+                    <li>
+
+                        <a href="{% url 'logout' %}">
+
+                            Logout
+
+                        </a>
+
+                    </li>
+
+                </ul>
+
+            </div>
+
+        {% endif %}
+
+    </div>
+
+</div>
