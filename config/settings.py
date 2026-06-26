@@ -141,6 +141,8 @@ USE_TZ = True
 
 NPM_BIN_PATH = r"C:\nvm4w\nodejs\npm.cmd"
 
+AUTH_USER_MODEL = "accounts.User"
+
 
 
 # Static files (CSS, JavaScript, Images)
