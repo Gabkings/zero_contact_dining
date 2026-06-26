@@ -3,6 +3,8 @@ from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.forms import PasswordChangeForm
 
+from accounts.validators import validate_phone_number
+
 from .models import User
 
 
@@ -20,84 +22,76 @@ class RegistrationForm(UserCreationForm):
             "password1",
             "password2",
         )
-
-
-class LoginForm(AuthenticationForm):
-    class Meta:
-        model = User
-
-        fields = (
-            "username",
-            "password",
-        )
-
-from django import forms
-from django.contrib.auth.forms import UserCreationForm
-
-from .models import User
-from .validators import validate_phone_number
-
-
-class RegistrationForm(UserCreationForm):
 
     def __init__(self, *args, **kwargs):
 
         super().__init__(*args, **kwargs)
 
-        for field in self.fields.values():
+        placeholders = {
+            "first_name": "John",
+            "last_name": "Doe",
+            "username": "john_doe",
+            "email": "john@example.com",
+            "phone_number": "+254712345678",
+            "password1": "Password",
+            "password2": "Confirm Password",
+        }
 
-            field.widget.attrs.update({
-                "class": "input input-bordered w-full"
-            })
+        for field_name, field in self.fields.items():
 
-    phone_number = forms.CharField(
-        validators=[validate_phone_number]
-    )
+            field.widget.attrs.update(
+                {
+                    "class": "input input-bordered w-full",
+                    "placeholder": placeholders.get(field_name, ""),
+                }
+            )
 
-    class Meta:
-        model = User
-
-        fields = (
-            "first_name",
-            "last_name",
-            "username",
-            "email",
-            "phone_number",
-            "password1",
-            "password2",
+        self.fields["phone_number"].validators.append(
+            validate_phone_number
         )
+
     def clean_email(self):
 
-        email = self.cleaned_data["email"]
+        email = self.cleaned_data["email"].strip().lower()
 
         if User.objects.filter(email=email).exists():
 
             raise forms.ValidationError(
-                "Email already exists."
+                "An account with this email already exists."
             )
 
         return email
-    
+
     def clean_phone_number(self):
 
-        phone = self.cleaned_data["phone_number"]
+        phone = self.cleaned_data["phone_number"].strip()
 
-        return phone.strip()
+        return phone
 
 
 class LoginForm(AuthenticationForm):
 
-    username = forms.EmailField()
+    username = forms.EmailField(
+        label="Email"
+    )
 
     def __init__(self, *args, **kwargs):
 
         super().__init__(*args, **kwargs)
 
-        for field in self.fields.values():
+        self.fields["username"].widget.attrs.update(
+            {
+                "placeholder": "Email Address",
+                "class": "input input-bordered w-full",
+            }
+        )
 
-            field.widget.attrs.update({
-                "class": "input input-bordered w-full"
-            })
+        self.fields["password"].widget.attrs.update(
+            {
+                "placeholder": "Password",
+                "class": "input input-bordered w-full",
+            }
+        )
 
 
 
@@ -120,10 +114,13 @@ class ProfileForm(forms.ModelForm):
 
         for field in self.fields.values():
 
-            field.widget.attrs.update({
-                "class": "input input-bordered w-full"
-            })
+            field.widget.attrs.update(
+                {
+                    "class": "input input-bordered w-full"
+                }
+            )
 
+            
 
 class CustomPasswordChangeForm(PasswordChangeForm):
 

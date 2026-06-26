@@ -1,19 +1,54 @@
-from django.contrib.auth import login
-from django.contrib.auth.tokens import default_token_generator
-from django.shortcuts import redirect, render, get_object_or_404
-from django.contrib.auth.views import LoginView
-from .forms import LoginForm
-from .forms import RegistrationForm
-from django.contrib.auth.decorators import login_required
-from .forms import ProfileForm
-from .forms import CustomPasswordChangeForm
-from .services import AuthenticationService
 from django.contrib import messages
 from django.contrib.auth import update_session_auth_hash
-from django.contrib.auth.views import LogoutView
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.tokens import default_token_generator
+from django.contrib.auth.views import LoginView, LogoutView
+from django.shortcuts import get_object_or_404, redirect, render
+
+from .forms import (
+    RegistrationForm,
+    LoginForm,
+    ProfileForm,
+    CustomPasswordChangeForm,
+)
+from .models import User
+from .services import (
+    AuthenticationService,
+    ProfileService,
+    PasswordService,
+    EmailVerificationService,
+)
+
+
+class UserLoginView(LoginView):
+    """
+    Handles user login.
+    """
+
+    template_name = "accounts/login.html"
+    authentication_form = LoginForm
+    redirect_authenticated_user = True
+
+    def form_valid(self, form):
+        """
+        Optional success message.
+        """
+        messages.success(self.request, "Welcome back!")
+        return super().form_valid(form)
+
+
+class UserLogoutView(LogoutView):
+    """
+    Handles user logout.
+    """
+
+    next_page = "login"
 
 
 def register(request):
+    """
+    Register a new customer account.
+    """
 
     if request.method == "POST":
 
@@ -21,15 +56,32 @@ def register(request):
 
         if form.is_valid():
 
-            user = AuthenticationService.register_user(form)
+            validated_data = form.cleaned_data.copy()
 
-            AuthenticationService.login_user(request, user)
-            messages.success(request, "Your account has been created successfully.")
+            validated_data["password"] = validated_data.pop("password1")
+            validated_data.pop("password2")
 
-            return redirect("dashboard")
+            user = AuthenticationService.register_user(validated_data)
+
+            token = EmailVerificationService.generate_token(user)
+
+            verification_url = request.build_absolute_uri(
+                f"/accounts/verify/{user.pk}/{token}/"
+            )
+
+            EmailVerificationService.send_verification_email(
+                user=user,
+                verification_url=verification_url,
+            )
+
+            messages.success(
+                request,
+                "Registration successful. Please verify your email before logging in.",
+            )
+
+            return redirect("login")
 
     else:
-        messages.error(request, "Failed to create account.")
         form = RegistrationForm()
 
     return render(
@@ -41,26 +93,11 @@ def register(request):
     )
 
 
-
-class UserLoginView(LoginView):
-
-    template_name = "accounts/login.html"
-
-    authentication_form = LoginForm
-
-    redirect_authenticated_user = True
-
-
-
-
-class UserLogoutView(LogoutView):
-
-    next_page = "login"
-
-
-
 @login_required
 def profile(request):
+    """
+    View and update user profile.
+    """
 
     if request.method == "POST":
 
@@ -72,12 +109,20 @@ def profile(request):
 
         if form.is_valid():
 
-            form.save()
-            messages.success(request, "Profile updated successfully.")
+            ProfileService.update_profile(
+                request.user,
+                form.cleaned_data,
+            )
+
+            messages.success(
+                request,
+                "Profile updated successfully.",
+            )
+
             return redirect("profile")
 
     else:
-        messages.error(request, "Failed to update profile.")
+
         form = ProfileForm(instance=request.user)
 
     return render(
@@ -91,6 +136,9 @@ def profile(request):
 
 @login_required
 def change_password(request):
+    """
+    Change user password.
+    """
 
     if request.method == "POST":
 
@@ -101,50 +149,63 @@ def change_password(request):
 
         if form.is_valid():
 
-            user = form.save()
+            PasswordService.change_password(
+                request.user,
+                form.cleaned_data["new_password1"],
+            )
 
             update_session_auth_hash(
                 request,
-                user,
+                request.user,
             )
 
             messages.success(
                 request,
-                "Password updated successfully."
+                "Password changed successfully.",
             )
 
             return redirect("profile")
 
     else:
 
-        form = CustomPasswordChangeForm(
-            request.user
-        )
+        form = CustomPasswordChangeForm(request.user)
 
     return render(
         request,
         "accounts/change_password.html",
         {
-            "form": form
+            "form": form,
         },
     )
 
 
 def verify_email(request, uid, token):
+    """
+    Verify user email address.
+    """
 
     user = get_object_or_404(
         User,
         pk=uid,
     )
 
-    if default_token_generator.check_token(user, token):
+    if EmailVerificationService.verify_token(
+        user,
+        token,
+    ):
 
-        user.is_active = True
+        EmailVerificationService.activate_user(user)
 
-        user.is_email_verified = True
-
-        user.save()
+        messages.success(
+            request,
+            "Your email has been verified successfully. You can now log in.",
+        )
 
         return redirect("login")
+
+    messages.error(
+        request,
+        "Verification link is invalid or has expired.",
+    )
 
     return redirect("register")
