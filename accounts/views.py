@@ -1,9 +1,11 @@
 from django.contrib import messages
 from django.contrib.auth import update_session_auth_hash
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.views import LoginView, LogoutView
-from django.shortcuts import get_object_or_404, redirect, render
+from django.shortcuts import get_object_or_404, redirect
+from django.urls import reverse_lazy
+from django.views.generic import CreateView, UpdateView, View
 
 from .forms import (
     RegistrationForm,
@@ -11,7 +13,9 @@ from .forms import (
     ProfileForm,
     CustomPasswordChangeForm,
 )
+
 from .models import User
+
 from .services import (
     AuthenticationService,
     ProfileService,
@@ -21,126 +25,136 @@ from .services import (
 
 
 class UserLoginView(LoginView):
-    """
-    Handles user login.
-    """
 
     template_name = "accounts/login.html"
+
     authentication_form = LoginForm
+
     redirect_authenticated_user = True
 
     def form_valid(self, form):
-        """
-        Optional success message.
-        """
-        messages.success(self.request, "Welcome back!")
+
+        messages.success(
+            self.request,
+            "Welcome back!"
+        )
+
         return super().form_valid(form)
 
 
 class UserLogoutView(LogoutView):
-    """
-    Handles user logout.
-    """
 
-    next_page = "login"
+    next_page = reverse_lazy("login")
 
 
-def register(request):
-    """
-    Register a new customer account.
-    """
+class RegisterView(CreateView):
 
-    if request.method == "POST":
+    form_class = RegistrationForm
 
-        form = RegistrationForm(request.POST)
+    template_name = "accounts/register.html"
 
-        if form.is_valid():
+    success_url = reverse_lazy("login")
 
-            validated_data = form.cleaned_data.copy()
+    def form_valid(self, form):
 
-            validated_data["password"] = validated_data.pop("password1")
-            validated_data.pop("password2")
+        validated_data = form.cleaned_data.copy()
 
-            user = AuthenticationService.register_user(validated_data)
-
-            token = EmailVerificationService.generate_token(user)
-
-            verification_url = request.build_absolute_uri(
-                f"/accounts/verify/{user.pk}/{token}/"
-            )
-
-            EmailVerificationService.send_verification_email(
-                user=user,
-                verification_url=verification_url,
-            )
-
-            messages.success(
-                request,
-                "Registration successful. Please verify your email before logging in.",
-            )
-
-            return redirect("login")
-
-    else:
-        form = RegistrationForm()
-
-    return render(
-        request,
-        "accounts/register.html",
-        {
-            "form": form,
-        },
-    )
-
-
-@login_required
-def profile(request):
-    """
-    View and update user profile.
-    """
-
-    if request.method == "POST":
-
-        form = ProfileForm(
-            request.POST,
-            request.FILES,
-            instance=request.user,
+        validated_data["password"] = validated_data.pop(
+            "password1"
         )
 
-        if form.is_valid():
+        validated_data.pop(
+            "password2",
+            None,
+        )
 
-            ProfileService.update_profile(
-                request.user,
-                form.cleaned_data,
+        user = AuthenticationService.register_user(
+            validated_data
+        )
+
+        token = EmailVerificationService.generate_token(
+            user
+        )
+
+        verification_url = self.request.build_absolute_uri(
+            reverse_lazy(
+                "verify_email",
+                kwargs={
+                    "uid": user.pk,
+                    "token": token,
+                },
             )
+        )
 
-            messages.success(
-                request,
-                "Profile updated successfully.",
-            )
+        EmailVerificationService.send_verification_email(
+            user,
+            verification_url,
+        )
 
-            return redirect("profile")
+        messages.success(
+            self.request,
+            "Account created successfully. Please verify your email."
+        )
 
-    else:
-
-        form = ProfileForm(instance=request.user)
-
-    return render(
-        request,
-        "accounts/profile.html",
-        {
-            "form": form,
-        },
-    )
+        return redirect(
+            self.success_url
+        )
 
 
-@login_required
-def change_password(request):
-    """
-    Change user password.
-    """
+class ProfileView(LoginRequiredMixin, UpdateView):
 
-    if request.method == "POST":
+    model = User
+
+    form_class = ProfileForm
+
+    template_name = "accounts/profile.html"
+
+    success_url = reverse_lazy("profile")
+
+    def get_object(self):
+
+        return self.request.user
+
+    def form_valid(self, form):
+
+        ProfileService.update_profile(
+
+            self.request.user,
+
+            form.cleaned_data,
+
+        )
+
+        messages.success(
+
+            self.request,
+
+            "Profile updated successfully.",
+
+        )
+
+        return redirect(self.success_url)
+
+
+class ChangePasswordView(LoginRequiredMixin, View):
+
+    template_name = "accounts/change_password.html"
+
+    def get(self, request):
+
+        form = CustomPasswordChangeForm(
+            request.user
+        )
+
+        return render(
+            request,
+            self.template_name,
+            {
+                "form": form,
+            },
+        )
+
+    def post(self, request):
 
         form = CustomPasswordChangeForm(
             request.user,
@@ -161,51 +175,55 @@ def change_password(request):
 
             messages.success(
                 request,
-                "Password changed successfully.",
+                "Password updated."
             )
 
-            return redirect("profile")
+            return redirect(
+                "profile"
+            )
 
-    else:
+        return render(
+            request,
+            self.template_name,
+            {
+                "form": form,
+            },
+        )
 
-        form = CustomPasswordChangeForm(request.user)
 
-    return render(
+class VerifyEmailView(View):
+
+    def get(
+        self,
         request,
-        "accounts/change_password.html",
-        {
-            "form": form,
-        },
-    )
-
-
-def verify_email(request, uid, token):
-    """
-    Verify user email address.
-    """
-
-    user = get_object_or_404(
-        User,
-        pk=uid,
-    )
-
-    if EmailVerificationService.verify_token(
-        user,
+        uid,
         token,
     ):
 
-        EmailVerificationService.activate_user(user)
-
-        messages.success(
-            request,
-            "Your email has been verified successfully. You can now log in.",
+        user = get_object_or_404(
+            User,
+            pk=uid,
         )
 
-        return redirect("login")
+        if EmailVerificationService.verify_token(
+            user,
+            token,
+        ):
 
-    messages.error(
-        request,
-        "Verification link is invalid or has expired.",
-    )
+            EmailVerificationService.activate_user(
+                user
+            )
 
-    return redirect("register")
+            messages.success(
+                request,
+                "Email verified successfully."
+            )
+
+            return redirect("login")
+
+        messages.error(
+            request,
+            "Invalid verification link."
+        )
+
+        return redirect("register")
